@@ -1,0 +1,117 @@
+name: Sync Production to DevOpsDemo Production
+
+on:
+  push:
+    branches: 
+      - production
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout source repository
+        id: checkout
+        uses: actions/checkout@v3
+        with:
+          repository: deshpande-adwait/devopsdemo
+          ref: production
+          fetch-depth: 0
+        continue-on-error: true
+
+      - name: Check checkout status
+        if: steps.checkout.outcome != 'success'
+        run: |
+          echo "::error::Failed to checkout repository"
+          exit 1
+
+      - name: Configure Git
+        id: git_config
+        run: |
+          git config user.name "deshpande-adwait"
+          git config user.email "actions@github.com"
+          echo "Git configuration completed successfully"
+        continue-on-error: true
+
+      - name: Add target remote repository
+        id: add_remote
+        run: |
+          if ! git remote add target https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/deshpande-adwait/devopsdemo_production.git; then
+            echo "::error::Failed to add remote repository"
+            exit 1
+          fi
+          
+          if ! git fetch target; then
+            echo "::error::Failed to fetch from remote repository"
+            exit 1
+          fi
+          echo "Remote repository added and fetched successfully"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge changes
+        id: merge
+        run: |
+          # Create and checkout new branch
+          if ! git checkout -b temp_merge_branch; then
+            echo "::error::Failed to create temporary branch"
+            exit 1
+          fi
+          
+          # Attempt merge
+          if ! git merge target/main; then
+            echo "::warning::Merge conflicts detected. Creating pull request for manual resolution"
+            
+            # Create pull request for manual conflict resolution
+            gh pr create \
+              --title "Merge Conflicts: Production to DevOpsDemo Production" \
+              --body "Automatic merge failed. Please resolve conflicts manually." \
+              --base main \
+              --head temp_merge_branch \
+              --repo deshpande-adwait/devopsdemo_production
+            
+            exit 1
+          fi
+          
+          # Push changes
+          if ! git push target temp_merge_branch:main; then
+            echo "::error::Failed to push changes to target repository"
+            exit 1
+          fi
+          
+          echo "Merge and push completed successfully"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cleanup
+        if: always()
+        id: cleanup
+        run: |
+          git checkout production || echo "::warning::Failed to checkout production branch"
+          git branch -D temp_merge_branch || echo "::warning::Failed to delete temporary branch"
+
+      - name: Notify status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "::notice::Workflow completed successfully - Changes merged from devopsdemo/production to devopsdemo_production/main"
+          else
+            echo "::error::Workflow failed - Check previous steps for detailed error messages"
+            
+            # Create issue for failed workflow
+            gh issue create \
+              --title "Merge Workflow Failed: Production to DevOpsDemo Production" \
+              --body "The merge workflow failed. Please check the workflow logs for details." \
+              --label "workflow-failure" \
+              --repo deshpande-adwait/devopsdemo_production
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

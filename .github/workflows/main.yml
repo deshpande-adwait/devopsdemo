@@ -51,48 +51,48 @@ jobs:
         env:
           PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
 
-      - name: Merge changes and detect conflicts
-        id: merge
-        run: |
-          # Create and checkout new branch
-          if ! git checkout -b temp_merge_branch; then
-            echo "::error::Failed to create temporary branch"
-            exit 1
-          fi
-          
-          # Try a test merge first to detect conflicts
-          echo "Detecting potential conflicts..."
-          CONFLICTS=$(git merge-tree $(git merge-base HEAD target/main) HEAD target/main | grep -A3 "changed in both")
-          
-          if [ ! -z "$CONFLICTS" ]; then
-            echo "Conflicts detected in the following files:"
-            echo "$CONFLICTS" | tee conflict_report.txt
-            echo "::warning::Merge conflicts detected - will be resolved using 'theirs' strategy"
+          - name: Merge changes and detect conflicts
+          id: merge
+          run: |
+            # Create and checkout new branch
+            if ! git checkout -b temp_merge_branch; then
+              echo "::error::Failed to create temporary branch"
+              exit 1
+            fi
             
-            # Create issue with conflict details
-            gh issue create \
-              --title "Merge Conflicts Detected and Auto-resolved" \
-              --body "The following conflicts were automatically resolved using 'theirs' strategy: $(cat conflict_report.txt)" \
-              --label "auto-resolved-conflicts" \
-              --repo deshpande-adwait/devopsdemo_production
-          fi
-          
-          # Perform actual merge with theirs strategy
-          if ! git merge -X theirs target/main; then
-            echo "::error::Merge failed even with theirs strategy"
-            exit 1
-          fi
-          
-          # Push changes
-          if ! git push target temp_merge_branch:main; then
-            echo "::error::Failed to push changes to target repository"
-            exit 1
-          fi
-          
-          echo "Merge and push completed successfully"
-        env:
-          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
-          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
+            # Try a test merge first to detect conflicts
+            echo "Detecting potential conflicts..."
+            CONFLICTS=$(git merge-tree $(git merge-base HEAD target/main) HEAD target/main | grep -A3 "changed in both" || true)
+            
+            if [ ! -z "$CONFLICTS" ]; then
+              echo "Conflicts detected in the following files:"
+              echo "$CONFLICTS" | tee conflict_report.txt
+              echo "::warning::Merge conflicts detected - will be resolved using 'theirs' strategy"
+              
+              # Create issue with conflict details
+              gh issue create \
+                --title "Merge Conflicts Detected and Auto-resolved" \
+                --body "The following conflicts were automatically resolved using 'theirs' strategy: $(cat conflict_report.txt)" \
+                --label "auto-resolved-conflicts" \
+                --repo deshpande-adwait/devopsdemo_production
+            fi
+            
+            # Perform actual merge with theirs strategy and allow unrelated histories
+            if ! git merge --allow-unrelated-histories -X theirs target/main; then
+              echo "::error::Merge failed even with theirs strategy"
+              exit 1
+            fi
+            
+            # Push changes
+            if ! git push target temp_merge_branch:main; then
+              echo "::error::Failed to push changes to target repository"
+              exit 1
+            fi
+            
+            echo "Merge and push completed successfully"
+          env:
+            GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
+            PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}  
 
       - name: Save conflict report
         if: always()

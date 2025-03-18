@@ -5,12 +5,6 @@ on:
     branches: 
       - production
 
-permissions:
-  contents: write
-  actions: write
-  pull-requests: write
-  issues: write
-
 jobs:
   merge:
     runs-on: ubuntu-latest
@@ -23,6 +17,7 @@ jobs:
           repository: deshpande-adwait/devopsdemo
           ref: production
           fetch-depth: 0
+          token: ${{ secrets.PAT_DEPLOY_KEY }}
         continue-on-error: true
 
       - name: Check checkout status
@@ -36,13 +31,14 @@ jobs:
         run: |
           git config user.name "deshpande-adwait"
           git config user.email "actions@github.com"
+          git config merge.ours.driver true
           echo "Git configuration completed successfully"
         continue-on-error: true
 
       - name: Add target remote repository
         id: add_remote
         run: |
-          if ! git remote add target https://${GITHUB_ACTOR}:${GITHUB_TOKEN}@github.com/deshpande-adwait/devopsdemo_production.git; then
+          if ! git remote add target https://${GITHUB_ACTOR}:${PAT_DEPLOY_KEY}@github.com/deshpande-adwait/devopsdemo_production.git; then
             echo "::error::Failed to add remote repository"
             exit 1
           fi
@@ -53,9 +49,9 @@ jobs:
           fi
           echo "Remote repository added and fetched successfully"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
 
-      - name: Merge changes
+      - name: Merge changes and detect conflicts
         id: merge
         run: |
           # Create and checkout new branch
@@ -64,18 +60,26 @@ jobs:
             exit 1
           fi
           
-          # Attempt merge
-          if ! git merge target/main; then
-            echo "::warning::Merge conflicts detected. Creating pull request for manual resolution"
+          # Try a test merge first to detect conflicts
+          echo "Detecting potential conflicts..."
+          CONFLICTS=$(git merge-tree $(git merge-base HEAD target/main) HEAD target/main | grep -A3 "changed in both")
+          
+          if [ ! -z "$CONFLICTS" ]; then
+            echo "Conflicts detected in the following files:"
+            echo "$CONFLICTS" | tee conflict_report.txt
+            echo "::warning::Merge conflicts detected - will be resolved using 'theirs' strategy"
             
-            # Create pull request for manual conflict resolution
-            gh pr create \
-              --title "Merge Conflicts: Production to DevOpsDemo Production" \
-              --body "Automatic merge failed. Please resolve conflicts manually." \
-              --base main \
-              --head temp_merge_branch \
+            # Create issue with conflict details
+            gh issue create \
+              --title "Merge Conflicts Detected and Auto-resolved" \
+              --body "The following conflicts were automatically resolved using 'theirs' strategy: $(cat conflict_report.txt)" \
+              --label "auto-resolved-conflicts" \
               --repo deshpande-adwait/devopsdemo_production
-            
+          fi
+          
+          # Perform actual merge with theirs strategy
+          if ! git merge -X theirs target/main; then
+            echo "::error::Merge failed even with theirs strategy"
             exit 1
           fi
           
@@ -87,8 +91,17 @@ jobs:
           
           echo "Merge and push completed successfully"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
+          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
+
+      - name: Save conflict report
+        if: always()
+        run: |
+          if [ -f conflict_report.txt ]; then
+            echo "::group::Conflict Report"
+            cat conflict_report.txt
+            echo "::endgroup::"
+          fi
 
       - name: Cleanup
         if: always()
@@ -113,5 +126,4 @@ jobs:
               --repo deshpande-adwait/devopsdemo_production
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}

@@ -21,33 +21,43 @@ jobs:
         continue-on-error: true
 
       - name: Check checkout status
-        if: steps.checkout.outcome != 'success'
+        if: always()
         run: |
-          echo "::error::Failed to checkout repository"
-          exit 1
+          if [ "${{ steps.checkout.outcome }}" == "success" ]; then
+            echo "::notice::Repository checkout completed successfully"
+          else
+            echo "::error::Failed to checkout repository"
+            exit 1
+          fi
 
       - name: Configure Git
         id: git_config
         run: |
-          git config user.name "deshpande-adwait"
-          git config user.email "actions@github.com"
-          git config merge.ours.driver true
-          echo "Git configuration completed successfully"
-        continue-on-error: true
+          if git config user.name "deshpande-adwait" && \
+             git config user.email "actions@github.com" && \
+             git config merge.ours.driver true; then
+            echo "::notice::Git configuration completed successfully"
+          else
+            echo "::error::Git configuration failed"
+            exit 1
+          fi
 
       - name: Add target remote repository
         id: add_remote
         run: |
-          if ! git remote add target https://${GITHUB_ACTOR}:${PAT_DEPLOY_KEY}@github.com/deshpande-adwait/devopsdemo_production.git; then
+          if git remote add target https://${GITHUB_ACTOR}:${PAT_DEPLOY_KEY}@github.com/deshpande-adwait/devopsdemo_production.git; then
+            echo "::notice::Remote repository added successfully"
+          else
             echo "::error::Failed to add remote repository"
             exit 1
           fi
           
-          if ! git fetch target; then
+          if git fetch target; then
+            echo "::notice::Remote repository fetched successfully"
+          else
             echo "::error::Failed to fetch from remote repository"
             exit 1
           fi
-          echo "Remote repository added and fetched successfully"
         env:
           PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
 
@@ -55,7 +65,9 @@ jobs:
         id: merge
         run: |
           # Create and checkout new branch
-          if ! git checkout -b temp_merge_branch; then
+          if git checkout -b temp_merge_branch; then
+            echo "::notice::Created and switched to temporary branch successfully"
+          else
             echo "::error::Failed to create temporary branch"
             exit 1
           fi
@@ -65,31 +77,39 @@ jobs:
           CONFLICTS=$(git merge-tree $(git merge-base HEAD target/main) HEAD target/main | grep -A3 "changed in both" || true)
           
           if [ ! -z "$CONFLICTS" ]; then
-            echo "Conflicts detected in the following files:"
+            echo "::warning::Conflicts detected in the following files:"
             echo "$CONFLICTS" | tee conflict_report.txt
-            echo "::warning::Merge conflicts detected - will be resolved using 'theirs' strategy"
+            echo "::notice::Conflicts will be resolved using 'theirs' strategy"
             
             # Create issue with conflict details
-            gh issue create \
+            if gh issue create \
               --title "Merge Conflicts Detected and Auto-resolved" \
               --body "The following conflicts were automatically resolved using 'theirs' strategy: $(cat conflict_report.txt)" \
               --label "auto-resolved-conflicts" \
-              --repo deshpande-adwait/devopsdemo_production
+              --repo deshpande-adwait/devopsdemo_production; then
+              echo "::notice::Created conflict notification issue successfully"
+            else
+              echo "::warning::Failed to create conflict notification issue"
+            fi
+          else
+            echo "::notice::No conflicts detected"
           fi
           
           # Perform actual merge with theirs strategy and allow unrelated histories
-          if ! git merge --allow-unrelated-histories -X theirs target/main; then
+          if git merge --allow-unrelated-histories -X theirs target/main; then
+            echo "::notice::Merge completed successfully"
+          else
             echo "::error::Merge failed even with theirs strategy"
             exit 1
           fi
           
           # Push changes
-          if ! git push target temp_merge_branch:main; then
+          if git push target temp_merge_branch:main; then
+            echo "::notice::Changes pushed to target repository successfully"
+          else
             echo "::error::Failed to push changes to target repository"
             exit 1
           fi
-          
-          echo "Merge and push completed successfully"
         env:
           GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
           PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
@@ -101,14 +121,26 @@ jobs:
             echo "::group::Conflict Report"
             cat conflict_report.txt
             echo "::endgroup::"
+            echo "::notice::Conflict report saved successfully"
+          else
+            echo "::notice::No conflict report to save"
           fi
 
       - name: Cleanup
         if: always()
         id: cleanup
         run: |
-          git checkout production || echo "::warning::Failed to checkout production branch"
-          git branch -D temp_merge_branch || echo "::warning::Failed to delete temporary branch"
+          if git checkout production; then
+            echo "::notice::Switched back to production branch successfully"
+          else
+            echo "::warning::Failed to checkout production branch"
+          fi
+          
+          if git branch -D temp_merge_branch; then
+            echo "::notice::Temporary branch deleted successfully"
+          else
+            echo "::warning::Failed to delete temporary branch"
+          fi
 
       - name: Notify status
         if: always()
@@ -119,11 +151,15 @@ jobs:
             echo "::error::Workflow failed - Check previous steps for detailed error messages"
             
             # Create issue for failed workflow
-            gh issue create \
+            if gh issue create \
               --title "Merge Workflow Failed: Production to DevOpsDemo Production" \
               --body "The merge workflow failed. Please check the workflow logs for details." \
               --label "workflow-failure" \
-              --repo deshpande-adwait/devopsdemo_production
+              --repo deshpande-adwait/devopsdemo_production; then
+              echo "::notice::Created failure notification issue successfully"
+            else
+              echo "::error::Failed to create failure notification issue"
+            fi
           fi
         env:
           GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}

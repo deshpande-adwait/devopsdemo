@@ -1,0 +1,165 @@
+name: Sync Production to DevOpsDemo Production
+
+on:
+  push:
+    branches: 
+      - production
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout source repository
+        id: checkout
+        uses: actions/checkout@v3
+        with:
+          repository: deshpande-adwait/devopsdemo
+          ref: production
+          fetch-depth: 0
+          token: ${{ secrets.PAT_DEPLOY_KEY }}
+        continue-on-error: true
+
+      - name: Check checkout status
+        if: always()
+        run: |
+          if [ "${{ steps.checkout.outcome }}" == "success" ]; then
+            echo "::notice::Repository checkout completed successfully"
+          else
+            echo "::error::Failed to checkout repository"
+            exit 1
+          fi
+
+      - name: Configure Git
+        id: git_config
+        run: |
+          if git config user.name "deshpande-adwait" && \
+             git config user.email "actions@github.com" && \
+             git config merge.ours.driver true; then
+            echo "::notice::Git configuration completed successfully"
+          else
+            echo "::error::Git configuration failed"
+            exit 1
+          fi
+
+      - name: Add target remote repository
+        id: add_remote
+        run: |
+          if git remote add target https://${GITHUB_ACTOR}:${PAT_DEPLOY_KEY}@github.com/deshpande-adwait/devopsdemo_production.git; then
+            echo "::notice::Remote repository added successfully"
+          else
+            echo "::error::Failed to add remote repository"
+            exit 1
+          fi
+          
+          if git fetch target; then
+            echo "::notice::Remote repository fetched successfully"
+          else
+            echo "::error::Failed to fetch from remote repository"
+            exit 1
+          fi
+        env:
+          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
+
+      - name: Merge changes and detect conflicts
+        id: merge
+        run: |
+          # Create and checkout new branch
+          if git checkout -b temp_merge_branch; then
+            echo "::notice::Created and switched to temporary branch successfully"
+          else
+            echo "::error::Failed to create temporary branch"
+            exit 1
+          fi
+          
+          # Try a test merge first to detect conflicts
+          echo "Detecting potential conflicts..."
+          CONFLICTS=$(git merge-tree $(git merge-base HEAD target/main) HEAD target/main | grep -A3 "changed in both" || true)
+          
+          if [ ! -z "$CONFLICTS" ]; then
+            echo "::warning::Conflicts detected in the following files:"
+            echo "$CONFLICTS" | tee conflict_report.txt
+            echo "::notice::Conflicts will be resolved using 'theirs' strategy"
+            
+            # Create issue with conflict details
+            if gh issue create \
+              --title "Merge Conflicts Detected and Auto-resolved" \
+              --body "The following conflicts were automatically resolved using 'theirs' strategy: $(cat conflict_report.txt)" \
+              --label "auto-resolved-conflicts" \
+              --repo deshpande-adwait/devopsdemo_production; then
+              echo "::notice::Created conflict notification issue successfully"
+            else
+              echo "::warning::Failed to create conflict notification issue"
+            fi
+          else
+            echo "::notice::No conflicts detected"
+          fi
+          
+          # Perform actual merge with theirs strategy and allow unrelated histories
+          if git merge --allow-unrelated-histories -X theirs target/main; then
+            echo "::notice::Merge completed successfully"
+          else
+            echo "::error::Merge failed even with theirs strategy"
+            exit 1
+          fi
+          
+          # Push changes
+          if git push target temp_merge_branch:main; then
+            echo "::notice::Changes pushed to target repository successfully"
+          else
+            echo "::error::Failed to push changes to target repository"
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
+          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
+
+      - name: Save conflict report
+        if: always()
+        run: |
+          if [ -f conflict_report.txt ]; then
+            echo "::group::Conflict Report"
+            cat conflict_report.txt
+            echo "::endgroup::"
+            echo "::notice::Conflict report saved successfully"
+          else
+            echo "::notice::No conflict report to save"
+          fi
+
+      - name: Cleanup
+        if: always()
+        id: cleanup
+        run: |
+          if git checkout production; then
+            echo "::notice::Switched back to production branch successfully"
+          else
+            echo "::warning::Failed to checkout production branch"
+          fi
+          
+          if git branch -D temp_merge_branch; then
+            echo "::notice::Temporary branch deleted successfully"
+          else
+            echo "::warning::Failed to delete temporary branch"
+          fi
+
+      - name: Notify status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "::notice::Workflow completed successfully - Changes merged from devopsdemo/production to devopsdemo_production/main"
+          else
+            echo "::error::Workflow failed - Check previous steps for detailed error messages"
+            
+            # Create issue for failed workflow
+            if gh issue create \
+              --title "Merge Workflow Failed: Production to DevOpsDemo Production" \
+              --body "The merge workflow failed. Please check the workflow logs for details." \
+              --label "workflow-failure" \
+              --repo deshpande-adwait/devopsdemo_production; then
+              echo "::notice::Created failure notification issue successfully"
+            else
+              echo "::error::Failed to create failure notification issue"
+            fi
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}

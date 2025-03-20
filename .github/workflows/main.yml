@@ -72,12 +72,22 @@ jobs:
         env:
           PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
 
-
       - name: Verify commits to be merged
         id: verify_commits
         run: |
+          echo "::group::Current branches status"
+          echo "Source branch (HEAD):"
+          git log -1 --oneline HEAD
+          echo "Target branch (target/main):"
+          git log -1 --oneline target/main
+          echo "::endgroup::"
+
           echo "::group::Commits that will be merged"
           git log --oneline target/main..HEAD || true
+          echo "::endgroup::"
+          
+          echo "::group::Full diff between branches"
+          git diff target/main..HEAD --stat || true
           echo "::endgroup::"
           
           echo "Checking for any missing commits..."
@@ -89,6 +99,16 @@ jobs:
             echo "::notice::Found $MISSING_COMMITS commits to merge"
             echo "missing_commits=true" >> $GITHUB_OUTPUT
           fi
+
+          # Additional verification
+          echo "::group::Checking for commits in target not in source"
+          git log --oneline HEAD..target/main || true
+          echo "::endgroup::"
+
+          # Show current git status
+          echo "::group::Git Status"
+          git status
+          echo "::endgroup::"
 
       - name: Merge changes and detect conflicts
         if: steps.verify_commits.outputs.missing_commits == 'true'

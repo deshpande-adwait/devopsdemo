@@ -62,7 +62,8 @@ jobs:
             exit 1
           fi
           
-          if git fetch target --prune --tags --force --all; then
+          # First fetch all from the target
+          if git fetch target --prune --tags; then
             echo "::notice::Remote repository fetched successfully with complete history"
           else
             echo "::error::Failed to fetch from remote repository"
@@ -70,6 +71,7 @@ jobs:
           fi
         env:
           PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
+
 
       - name: Verify commits to be merged
         id: verify_commits

@@ -1,190 +1,17 @@
-#name: Sync Production to DevOpsDemo Production
-#
-#on:
-#  workflow_dispatch:  # Allows manual triggering
-#  push:
-#    branches:
-#      - production  # Will trigger on pushes to production branch
-#  pull_request:
-#    branches:
-#      - production  # Will trigger on PRs targeting production branch
-
-#jobs:
-#  merge:
-#    runs-on: ubuntu-latest
-#    
-#    steps:
-#      - name: Checkout source repository
-#        id: checkout
-#        uses: actions/checkout@v3
-#        with:
-#          repository: deshpande-adwait/devopsdemo
-#          ref: production
-#          fetch-depth: 0
-#          token: ${{ secrets.PAT_DEPLOY_KEY }}
-#        continue-on-error: true
-#
-#      - name: Check checkout status
-#        if: always()
-#        run: |
-#          if [ "${{ steps.checkout.outcome }}" == "success" ]; then
-#            echo "::notice::Repository checkout completed successfully"
-#          else
-#            echo "::error::Failed to checkout repository"
-#            exit 1
-#          fi
-#
-#      - name: Configure Git
-#        id: git_config
-#        run: |
-#          if git config user.name "deshpande-adwait" && \
-#             git config user.email "actions@github.com" && \
-#             git config merge.ours.driver true; then
-#            echo "::notice::Git configuration completed successfully"
-#          else
-#            echo "::error::Git configuration failed"
-#            exit 1
-#          fi
-#
-#      - name: Add target remote repository
-#        id: add_remote
-#        run: |
-#          if git remote add target https://${GITHUB_ACTOR}:${PAT_DEPLOY_KEY}@github.com/deshpande-adwait/devopsdemo_production.git; then
-#            echo "::notice::Remote repository added successfully"
-#          else
-#            echo "::error::Failed to add remote repository"
-#            exit 1
-#          fi
-#          
-#          if git fetch target; then
-#            echo "::notice::Remote repository fetched successfully"
-#          else
-#            echo "::error::Failed to fetch from remote repository"
-#            exit 1
-#          fi
-#        env:
-#          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
-#
-#      - name: Merge changes and detect conflicts
-#        id: merge
-#        run: |
-#          # Create and checkout new branch
-#          if git checkout -b temp_merge_branch; then
-#            echo "::notice::Created and switched to temporary branch successfully"
-#          else
-#            echo "::error::Failed to create temporary branch"
-#            exit 1
-#          fi
-#          
-#          # Try a test merge first to detect conflicts
-#          echo "Detecting potential conflicts..."
-#          CONFLICTS=$(git merge-tree $(git merge-base HEAD target/main) HEAD target/main | grep -A3 "changed in both" || true)
-#          
-#          if [ ! -z "$CONFLICTS" ]; then
-#            echo "::warning::Conflicts detected in the following files:"
-#            echo "$CONFLICTS" | tee conflict_report.txt
-#            echo "::notice::Conflicts will be resolved using 'theirs' strategy"
-#            
-#            # Create issue with conflict details
-#            if gh issue create \
-#              --title "Merge Conflicts Detected and Auto-resolved" \
-#              --body "The following conflicts were automatically resolved using 'theirs' strategy: $(cat conflict_report.txt)" \
-#              --label "auto-resolved-conflicts" \
-#              --repo deshpande-adwait/devopsdemo_production; then
-#              echo "::notice::Created conflict notification issue successfully"
-#            else
-#              echo "::warning::Failed to create conflict notification issue"
-#            fi
-#          else
-#            echo "::notice::No conflicts detected"
-#          fi
-#          
-#          # Perform actual merge with theirs strategy and allow unrelated histories
-#          if git merge --allow-unrelated-histories -X theirs target/main; then
-#            echo "::notice::Merge completed successfully"
-#          else
-#            echo "::error::Merge failed even with theirs strategy"
-#            exit 1
-#          fi
-#          
-#          # Push changes
-#          if git push target temp_merge_branch:main; then
-#            echo "::notice::Changes pushed to target repository successfully"
-#          else
-#            echo "::error::Failed to push changes to target repository"
-#            exit 1
-#          fi
-#        env:
-#          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
-#          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
-#
-#      - name: Save conflict report
-#        if: always()
-#        run: |
-#          if [ -f conflict_report.txt ]; then
-#            echo "::group::Conflict Report"
-#            cat conflict_report.txt
-#            echo "::endgroup::"
-#            echo "::notice::Conflict report saved successfully"
-#          else
-#            echo "::notice::No conflict report to save"
-#          fi
-#
-#      - name: Cleanup
-#        if: always()
-#        id: cleanup
-#        run: |
-#          if git checkout production; then
-#            echo "::notice::Switched back to production branch successfully"
-#          else
-#            echo "::warning::Failed to checkout production branch"
-#          fi
-#          
-#          if git branch -D temp_merge_branch; then
-#            echo "::notice::Temporary branch deleted successfully"
-#          else
-#            echo "::warning::Failed to delete temporary branch"
-#          fi
-#
-#      - name: Notify status
-#        if: always()
-#        run: |
-#          if [ "${{ job.status }}" == "success" ]; then
-#            echo "::notice::Workflow completed successfully - Changes merged from devopsdemo/production to devopsdemo_production/main"
-#          else
-#            echo "::error::Workflow failed - Check previous steps for detailed error messages"
-#            
-#            # Create issue for failed workflow
-#            if gh issue create \
-#              --title "Merge Workflow Failed: Production to DevOpsDemo Production" \
-#              --body "The merge workflow failed. Please check the workflow logs for details." \
-#              --label "workflow-failure" \
-#              --repo deshpande-adwait/devopsdemo_production; then
-#              echo "::notice::Created failure notification issue successfully"
-#            else
-#              echo "::error::Failed to create failure notification issue"
-#            fi
-#          fi
-#        env:
-#          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
-#
-
-
-name: Test Merge Production to DevOpsDemo Production
+name: Sync Production to DevOpsDemo Production
 
 on:
-  # You can customize these triggers based on your needs
   workflow_dispatch:  # Allows manual triggering
   push:
     branches:
       - production  # Will trigger on pushes to production branch
-  
+      
   pull_request:
     branches:
       - production  # Will trigger on PRs targeting production branch
 
 jobs:
-  test_merge:
+  merge:
     runs-on: ubuntu-latest
     
     steps:
@@ -194,9 +21,8 @@ jobs:
         with:
           repository: deshpande-adwait/devopsdemo
           ref: production
-          fetch-depth: 0
+          fetch-depth: 0  # Fetch all history
           token: ${{ secrets.PAT_DEPLOY_KEY }}
-        continue-on-error: true
 
       - name: Check checkout status
         if: always()
@@ -207,6 +33,12 @@ jobs:
             echo "::error::Failed to checkout repository"
             exit 1
           fi
+
+      - name: Fetch complete history
+        run: |
+          git fetch origin --prune --tags --force
+          git fetch origin 'refs/tags/*:refs/tags/*'
+          echo "::notice::Fetched complete history of source repository"  
 
       - name: Configure Git
         id: git_config
@@ -230,60 +62,114 @@ jobs:
             exit 1
           fi
           
-          if git fetch target; then
-            echo "::notice::Remote repository fetched successfully"
-          else
-            echo "::error::Failed to fetch from remote repository"
-            exit 1
-          fi
+          # Fetch everything from target
+          git fetch target --prune --tags
+          git fetch target 'refs/heads/*:refs/remotes/target/*'
+          echo "::notice::Remote repository fetched successfully with complete history"
         env:
           PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
 
-      - name: Test merge and detect conflicts
-        id: test_merge
+      - name: Verify commits to be merged
+        id: verify_commits
         run: |
-          # Create and checkout new temporary branch
-          if git checkout -b temp_test_branch; then
-            echo "::notice::Created and switched to temporary test branch successfully"
-          else
-            echo "::error::Failed to create temporary test branch"
-            exit 1
-          fi
+          echo "::group::Current branches status"
+          echo "Source branch (HEAD) full history:"
+          git log --oneline production
+          echo "-----------------------------------------"
+          echo "Target branch (target/main) full history:"
+          git log --oneline target/main
+          echo "::endgroup::"
+
+          echo "::group::Branch comparison"
+          echo "Commits in source but not in target:"
+          git log --oneline target/main..HEAD || true
+          echo "-----------------------------------------"
+          echo "Commits in target but not in source:"
+          git log --oneline HEAD..target/main || true
+          echo "::endgroup::"
           
-          # Try a test merge to detect conflicts
-          echo "Detecting potential conflicts..."
-          CONFLICTS=$(git merge-tree $(git merge-base HEAD target/main) HEAD target/main | grep -A3 "changed in both" || true)
+          echo "::group::File comparison"
+          echo "Comparing specific files between branches:"
+          for file in $(git ls-tree -r --name-only HEAD); do
+            echo "Checking $file:"
+            if [ -f "$file" ]; then
+              echo "Source version:"
+              git show HEAD:"$file" | md5sum
+              echo "Target version (if exists):"
+              git show target/main:"$file" 2>/dev/null | md5sum || echo "File not in target"
+              echo "-----------------------------------------"
+            fi
+          done
+          echo "::endgroup::"
           
-          if [ ! -z "$CONFLICTS" ]; then
-            echo "::warning::Conflicts detected in the following files:"
-            echo "$CONFLICTS" | tee conflict_report.txt
-            echo "::notice::In actual merge, these conflicts would be resolved using 'theirs' strategy"
-            exit 1
-          else
-            echo "::notice::No conflicts detected - merge would be clean"
-          fi
+          echo "::group::Full diff between branches"
+          git diff target/main..HEAD --name-status || true
+          echo "::endgroup::"
           
-          # Test the merge without committing
-          if git merge --no-commit --no-ff target/main; then
-            echo "::notice::Test merge completed successfully"
-            # Clean up the test merge
-            git merge --abort
+          # Store all differences in a file
+          git diff target/main..HEAD > full_diff.txt
+          
+          echo "Checking for any missing commits..."
+          MISSING_COMMITS=$(git rev-list --count target/main..HEAD)
+          if [ "$MISSING_COMMITS" -eq "0" ]; then
+            echo "::warning::No new commits to merge!"
+            echo "missing_commits=false" >> $GITHUB_OUTPUT
           else
-            echo "::error::Test merge failed"
-            git merge --abort
-            exit 1
+            echo "::notice::Found $MISSING_COMMITS commits to merge"
+            echo "missing_commits=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Save conflict report
+          # Show current git status
+          echo "::group::Git Status"
+          git status
+          echo "::endgroup::"
+
+          # Additional debug information
+          echo "::group::Git Remote Information"
+          git remote -v
+          git branch -a
+          echo "::endgroup::"
+
+      - name: Merge changes and detect conflicts
+        if: steps.verify_commits.outputs.missing_commits == 'true'
+        id: merge
+        run: |
+          # Create and checkout new branch from latest source
+          git checkout -b temp_merge_branch production
+          
+          # Ensure we have latest from target
+          git fetch target --prune --tags
+          
+          # Create a backup of current state
+          git branch backup_branch
+          
+          # Force reset target to match source exactly
+          echo "Syncing target to match source exactly..."
+          git push target production:main --force
+          
+          echo "::notice::Force synced source to target"
+          
+          # Verify the sync
+          echo "::group::Verification after sync"
+          echo "Source HEAD:"
+          git log -1 --oneline production
+          echo "Target HEAD:"
+          git ls-remote target main
+          echo "::endgroup::"
+        env:
+          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}
+          PAT_DEPLOY_KEY: ${{ secrets.PAT_DEPLOY_KEY }}
+
+      - name: Save diff report
         if: always()
         run: |
-          if [ -f conflict_report.txt ]; then
-            echo "::group::Conflict Report"
-            cat conflict_report.txt
+          if [ -f full_diff.txt ]; then
+            echo "::group::Full Diff Report"
+            cat full_diff.txt
             echo "::endgroup::"
-            echo "::notice::Conflict report saved successfully"
+            echo "::notice::Diff report saved successfully"
           else
-            echo "::notice::No conflict report to save"
+            echo "::notice::No diff report to save"
           fi
 
       - name: Cleanup
@@ -296,17 +182,40 @@ jobs:
             echo "::warning::Failed to checkout production branch"
           fi
           
-          if git branch -D temp_test_branch; then
+          if git branch -D temp_merge_branch; then
             echo "::notice::Temporary branch deleted successfully"
           else
             echo "::warning::Failed to delete temporary branch"
           fi
+          
+          if git branch -D backup_branch; then
+            echo "::notice::Backup branch deleted successfully"
+          else
+            echo "::warning::Failed to delete backup branch"
+          fi
 
-      - name: Report status
+      - name: Notify status
         if: always()
         run: |
           if [ "${{ job.status }}" == "success" ]; then
-            echo "::notice::Test merge completed successfully - No conflicts detected"
+            if [ "${{ steps.verify_commits.outputs.missing_commits }}" == "true" ]; then
+              echo "::notice::Workflow completed successfully - Changes merged from devopsdemo/production to devopsdemo_production/main"
+            else
+              echo "::notice::Workflow completed - No new commits to merge"
+            fi
           else
-            echo "::error::Test merge failed - Check previous steps for detailed error messages"
+            echo "::error::Workflow failed - Check previous steps for detailed error messages"
+            
+            # Create issue for failed workflow
+            if gh issue create \
+              --title "Merge Workflow Failed: Production to DevOpsDemo Production" \
+              --body "The merge workflow failed. Please check the workflow logs for details." \
+              --label "workflow-failure" \
+              --repo deshpande-adwait/devopsdemo_production; then
+              echo "::notice::Created failure notification issue successfully"
+            else
+              echo "::error::Failed to create failure notification issue"
+            fi
           fi
+        env:
+          GH_TOKEN: ${{ secrets.PAT_DEPLOY_KEY }}

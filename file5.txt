@@ -1,1 +1,2 @@
-trial push
+trial push 1
+trial push 2

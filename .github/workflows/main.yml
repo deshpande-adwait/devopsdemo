@@ -37,7 +37,6 @@ jobs:
       - name: Fetch complete history
         run: |
           git fetch origin --prune --tags --force
-          git fetch origin 'refs/heads/*:refs/heads/*'
           git fetch origin 'refs/tags/*:refs/tags/*'
           echo "::notice::Fetched complete history of source repository"  
 
